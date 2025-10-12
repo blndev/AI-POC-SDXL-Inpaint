@@ -1,0 +1,15 @@
+# Main App
+gradio          # main UI
+colorlog        # Colored logging output
+Pillow          # PIL images
+numpy           # Image Manipulation (SKIP_AI)
+
+diffusers       # for stable diffusion general
+transformers    # for image generation
+accelerate      # for low cpu
+torch           # for gpu support and ai operations
+xformers        # memory optimization
+insightface     # Face recognition for tokens
+opencv-python   # Face recognition for tokens
+onnxruntime     # Face recognition CPU based (required for onnx models), use only if you not have a gpu
+onnxruntime-gpu # Face recognition GPU based (required for onnx models)
