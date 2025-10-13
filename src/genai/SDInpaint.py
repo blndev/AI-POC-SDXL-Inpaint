@@ -27,34 +27,34 @@ class ImageGenerationException(Exception):
 @singleton
 class SDInpaint():
     def __init__(self, default_model: str = config.get_model(), max_size: int = 1024):
-        logger.info("Initialize ConvertImage2ImageByStyle")
+        logger.info("Initialize")
         self.transformers_pipeline = transformers.pipeline
 
-        if "xl" in default_model.lower():
-            self.inpaint_pipeline = StableDiffusionXLInpaintPipeline
-        else:
-            self.inpaint_pipeline = StableDiffusionInpaintPipeline
+        # if "xl" in default_model.lower():
+        #     self.inpaint_pipeline = StableDiffusionXLInpaintPipeline
+        # else:
+        #     self.inpaint_pipeline = StableDiffusionInpaintPipeline
 
+        self.inpaint_pipeline = StableDiffusionInpaintPipeline
         self.max_image_size = max_size
         self.default_model = default_model
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self._cached_img2img_pipeline = None
+        self._cached_pipeline = None
         self.generation_lock = threading.Lock()
 
     def __del__(self):
         logger.info("free memory used for pipeline")
-        self.unload_img2img_pipeline()
+        self.unload_pipeline()
 
-    def _load_model(self, model=config.get_model(), use_cached_model=True):
-        """Load and return the Stable Diffusion model to generate images"""
-        if self._cached_img2img_pipeline and use_cached_model:
-            return self._cached_img2img_pipeline
+    def _get_pipeline(self, model=config.get_model(), use_cached_model=True):
+        """Load and return the Stable Diffusion Pipeline to generate images"""
+        if self._cached_pipeline and use_cached_model:
+            return self._cached_pipeline
 
         try:
             logger.debug(f"Loading model {model}")
 
             pipeline = None
-            # self.inpaint_pipeline = StableDiffusionInpaintPipeline.from_pretrained("stable-diffusion-v1-5/stable-diffusion-inpainting")
 
             if model.endswith("safetensors"):
                 logger.info(f"Using 'from_single_file' to load model {model} from local folder")
@@ -81,41 +81,34 @@ class SDInpaint():
             if self.device == "cuda":
                 pipeline.enable_xformers_memory_efficient_attention()
             logger.debug("Pipeline created")
-            self._cached_img2img_pipeline = pipeline
+            self._cached_pipeline = pipeline
             return pipeline
         except Exception as e:
             logger.error("Pipeline could not be created. Error in load_model: %s", str(e))
             logger.debug("Exception details:", e)
             raise Exception("Error while loading the pipeline for image conversion.\nSee logfile for details.")
 
-    def unload_img2img_pipeline(self):
+    def unload_pipeline(self):
         try:
-            logger.info("Unload image captioner")
-            if self._cached_img2img_pipeline:
-                del self._cached_img2img_pipeline
-                self._cached_img2img_pipeline = None
+            logger.info("Unload pipeline")
+            if self._cached_pipeline:
+                del self._cached_pipeline
+                self._cached_pipeline = None
             gc.collect()
             torch.cuda.empty_cache()
         except Exception:
-            logger.error("Error while unloading IMAGE_TO_IMAGE_PIPELINE")
+            logger.error("Error while unloading pipeline")
 
-    def change_img2img_model(self, model):
+    def change_pipeline_model(self, model):
         logger.info("Reloading model %s", model)
         try:
             self.default_model = model
-            self.unload_img2img_pipeline()
-            self._load_model(model=model, use_cached_model=False)
+            self.unload_pipeline()
+            self._get_pipeline(model=model, use_cached_model=False)
         except Exception as e:
-            logger.error("Error while changing text2img model: %s", str(e))
+            logger.error("Error while changing model: %s", str(e))
             logger.debug("Exception details: {e}")
-            raise (f"Loading new model '{model}' failed", e)
-
-    def calculate_crop(self, width, height):
-        new_width = width - (width % 8)
-        new_height = height - (height % 8)
-        crop_x = (width - new_width) // 2
-        crop_y = (height - new_height) // 2
-        return new_width, new_height, crop_x, crop_y
+            raise Exception(f"Loading new model '{model}' failed", e)
 
     def generate_images(self, params: Image2ImageParameters, count: int) -> List[Image.Image]:
         """Generate a list of images."""
@@ -129,44 +122,44 @@ class SDInpaint():
 
                 image = params.input_image
                 logger.debug(f"Input image Size {image.width}x{image.height}")
-                image.thumbnail((self.max_image_size, self.max_image_size))
                 # make sure that image heigth and width can be divided by 8
+                image.thumbnail((self.max_image_size, self.max_image_size))
+                logger.debug(f"Reduzed to max image Size {image.width}x{image.height}")
                 new_width = image.width - (image.width % 8)
                 new_height = image.height - (image.height % 8)
-                logger.debug(f"Crop Result {new_width}x{new_height}")
+                logger.debug(f"Expected Crop Result {new_width}x{new_height}")
                 image = image.crop((0, 0, new_width, new_height))
+                logger.debug(f"Cropped fo /8 image Size {image.width}x{image.height}")
 
-                logger.debug(f"used image Size {image.width}x{image.height}")
                 # Create default mask if none provided
                 mask = params.mask_image or Image.new("L", image.size, 255)
-                logger.debug(f"MaskSize {mask.width}x{mask.height}")
+                mask = mask.convert('L')
+                mask = mask.crop((0, 0, new_width, new_height))
+                logger.debug(f"used image Size {image.width}x{image.height}")
+                logger.debug(f"used MaskSize {mask.width}x{mask.height}")
                 logger.debug("Strength: %f, Steps: %d",
                              params.strength, params.steps)
 
-                model = self._load_model()
+                model = self._get_pipeline()
                 if not model:
                     logger.error("No model loaded")
                     raise Exception("No model loaded. Generation not available")
 
                 result_image = model(
                     prompt=params.prompt,
-                    negative_prompt=params.negative_prompt,
+                    # negative_prompt=params.negative_prompt,
                     num_inference_steps=params.steps,
-                    image=[image] * count,
+                    image=image,
                     mask_image=mask,
                     width=image.width,
                     height=image.height,
                     strength=params.strength,
-                    num_images_per_prompt=count,
+                    num_images_per_prompt=count
                 ).images
-
+                logger.debug("images created")
                 return result_image
 
             except RuntimeError as e:
                 logger.error("Error while generating Image: %s", str(e))
-                self.unload_img2img_pipeline()
+                self.unload_pipeline()
                 raise ImageGenerationException(message=f"Error while creating the image. {e}")
-
-    def ui_elements(self) -> dict:
-        """Return a dictionary of UI elements and their required status."""
-        pass
