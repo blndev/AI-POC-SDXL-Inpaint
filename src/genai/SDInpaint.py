@@ -134,11 +134,11 @@ class SDInpaint():
                 # Create default mask if none provided
                 mask = params.mask_image or Image.new("L", image.size, 255)
                 mask = mask.convert('L')
+                mask.thumbnail((self.max_image_size, self.max_image_size))
                 mask = mask.crop((0, 0, new_width, new_height))
                 logger.debug(f"used image Size {image.width}x{image.height}")
                 logger.debug(f"used MaskSize {mask.width}x{mask.height}")
                 logger.debug("Strength: %f, Steps: %d", params.strength, params.steps)
-
                 pipeline = self._get_pipeline()
                 if not pipeline:
                     logger.error("No model loaded")
