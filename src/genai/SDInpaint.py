@@ -137,20 +137,19 @@ class SDInpaint():
                 mask = mask.crop((0, 0, new_width, new_height))
                 logger.debug(f"used image Size {image.width}x{image.height}")
                 logger.debug(f"used MaskSize {mask.width}x{mask.height}")
-                logger.debug("Strength: %f, Steps: %d",
-                             params.strength, params.steps)
+                logger.debug("Strength: %f, Steps: %d", params.strength, params.steps)
 
-                model = self._get_pipeline()
-                if not model:
+                pipeline = self._get_pipeline()
+                if not pipeline:
                     logger.error("No model loaded")
                     raise Exception("No model loaded. Generation not available")
-
-                result_image = model(
+                blurred_mask = pipeline.mask_processor.blur(mask, blur_factor=33)
+                result_image = pipeline(
                     prompt=params.prompt,
                     # negative_prompt=params.negative_prompt,
                     num_inference_steps=params.steps,
                     image=image,
-                    mask_image=mask,
+                    mask_image=blurred_mask,
                     width=image.width,
                     height=image.height,
                     strength=params.strength,
