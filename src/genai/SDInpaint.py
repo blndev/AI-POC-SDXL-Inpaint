@@ -113,6 +113,7 @@ class SDInpaint():
     def generate_images(self, params: Image2ImageParameters, count: int) -> List[Image.Image]:
         """Generate a list of images."""
         """Convert the input image using AI style transfer"""
+        """mask mus be black for parts to keep, white for parts to replace"""
         with self.generation_lock:
             try:
                 # Validate parameters
