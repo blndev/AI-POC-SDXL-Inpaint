@@ -318,7 +318,7 @@ def create_gradio_interface():
                     )
         with gr.Row():
             with gr.Column():
-                image_input = gr.ImageMask(label="Input", type="pil", height=512)
+                image_input = gr.ImageEditor(label="Input", type="pil", height=512)
                 # describe_button = gr.Button("Describe your Image", interactive=False)
                 with gr.Column(visible=False) as area_description:
                     text_description = gr.Textbox(label="Prompt", info="change the image description for better results",
@@ -342,7 +342,7 @@ def create_gradio_interface():
                     height=512,
                     show_download_button=True
                 )
-                start_button = gr.Button("Start Creation", interactive=False, variant="primary")
+                start_button = gr.Button("Start Creation", interactive=True, variant="primary")
 
         # Save input image immediately on change
         # adapt wrap_handle_input_response if you change output params
