@@ -221,23 +221,26 @@ def run_inpainting():
     # Find models and save list
     safetensors_files = find_safetensor_models(models_path, cache_path)
     print(f"Found {len(safetensors_files)} models")
+    if len(safetensors_files) == 0:
+        exit()
 
     # Save model list to output directory
     with open(os.path.join(output_dir, "models_used.txt"), 'w') as f:
         for i, model in enumerate(safetensors_files, 1):
             f.write(f"{i}. {model}\n")
 
+    # Load prompts
+    prompts = load_prompts(os.path.join(os.path.dirname(__file__), prompts_file))
+
     # Save prompts list to output directory
+    print(f"Using {len(prompts)} prompts")
     with open(os.path.join(output_dir, "prompts_used.txt"), 'w') as f:
         for i, prompt in enumerate(prompts, 1):
             f.write(f"{i}. {prompt}\n")
 
-    # Load prompts and input images
-    prompts = load_prompts(os.path.join(os.path.dirname(__file__), prompts_file))
+    # Load  input images
     input_images = load_input_images(input_path)
-
     print(f"Found {len(input_images)} input images")
-    print(f"Using {len(prompts)} prompts")
 
     # Prepare all images once
     prepared_images = []
