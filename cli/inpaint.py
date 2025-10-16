@@ -260,7 +260,7 @@ def run_inpainting():
         pipe = None
         try:
             # Determine pipeline type based on model name
-            if "sdxl" in model_path.lower():
+            if "xl" in model_path.lower():
                 pipe = StableDiffusionXLInpaintPipeline.from_single_file(
                     model_path,
                     torch_dtype=torch.float16,
@@ -278,12 +278,11 @@ def run_inpainting():
                     safety_checker=None,
                     requires_safety_checker=False
                 )
-
             pipe.to("cuda")
-
             if torch.cuda.is_available():
                 try:
                     pipe.enable_xformers_memory_efficient_attention()
+                    pipe.enable_attention_slicing()
                 except:
                     pass  # Ignore if xformers not available
 
