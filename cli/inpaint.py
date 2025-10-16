@@ -7,7 +7,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import gc
 from PIL import Image
-import configparser
+
 import glob
 
 
@@ -28,15 +28,18 @@ def load_filters():
     if os.getenv("MODEL_FILTER", None):
         filter_file = os.path.join(os.path.dirname(__file__), os.getenv("MODEL_FILTER", None))
         try:
-            config = configparser.ConfigParser()
-            config.read(filter_file)
-
-            if 'ignore' in config:
-                ignore_filters = [item.strip() for item in config['ignore'] if config['ignore'][item].strip()]
-
-            if 'include' in config:
-                include_filters = [item.strip() for item in config['include'] if config['include'][item].strip()]
-
+            with open(filter_file, 'r') as f:
+                current_section = None
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('[') and line.endswith(']'):
+                        current_section = line[1:-1]
+                    elif current_section == 'ignore' and line:
+                        ignore_filters.append(line)
+                    elif current_section == 'include' and line:
+                        include_filters.append(line)
         except FileNotFoundError:
             print(f"Warning: {filter_file} not found")
 
