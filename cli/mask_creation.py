@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from masks.SAM2MaskGenerator import SAM2MaskGenerator
 from masks.MediaPipeMaskGenerator import MediaPipeMaskGenerator
 
 # Configure logging

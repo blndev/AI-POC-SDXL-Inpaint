@@ -4,9 +4,6 @@ colorlog        # Colored logging output
 Pillow          # PIL images
 numpy           # Image Manipulation (SKIP_AI)
 dotenv          # config
-
-# SAM2 Mask Generation
-samv2           # Segment Anything Model 2 for mask generation
 requests        # For downloading model checkpoints
 
 # MediaPipe Mask Generation
@@ -17,8 +14,8 @@ transformers    # for image generation
 accelerate      # for low cpu
 torch           # for gpu support and ai operations shoudl be 2.8.0 for sam2
 xformers        # memory optimization
-insightface     # Face recognition for tokens
+#insightface     # Face recognition for tokens
 opencv-python   # Face recognition for tokens
-onnxruntime     # Face recognition CPU based (required for onnx models), use only if you not have a gpu
-onnxruntime-gpu # Face recognition GPU based (required for onnx models)
+#onnxruntime     # Face recognition CPU based (required for onnx models), use only if you not have a gpu
+#onnxruntime-gpu # Face recognition GPU based (required for onnx models)
 
