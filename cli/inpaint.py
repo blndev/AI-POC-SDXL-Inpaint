@@ -128,6 +128,8 @@ def generate_images(pipe, count, image, mask, prompt, output_dir, model_idx, pro
         result = pipe(
             prompt=prompt,
             image=image,
+            width=image.width,
+            height=image.height,
             mask_image=mask,
             num_inference_steps=inference_steps,
             strength=strength,
@@ -136,7 +138,7 @@ def generate_images(pipe, count, image, mask, prompt, output_dir, model_idx, pro
 
         # Save generated images
         for i, img in enumerate(result.images):
-            filename = f"{image_name}_m{model_idx}_p{prompt_idx}_i{i + 1}.jpg"
+            filename = f"{image_name}_p{prompt_idx}_i{i + 1}_m{model_idx}.jpg"
             filepath = os.path.join(output_dir, filename)
             img.save(filepath, "JPEG", quality=95)
             print(f"Saved: {filepath}")
