@@ -9,7 +9,7 @@ import logging
 import src.utils.config as config
 from src.genai.ImageGenerationParameters import Image2ImageParameters
 import src.utils.fileIO as utils
-from src.genai import SDInpaint, ImageCaptioner
+from src.genai import SDInpaint
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ if os.path.exists(_saved_hashes_path):
         _saved_hashes.update(json.load(f))
 
 _AIHandler = SDInpaint(config.get_model(), max_size=config.get_max_size())
-_ImageCaptioner = ImageCaptioner()
+_ImageCaptioner = None#ImageCaptioner()
 
 
 def action_update_all_local_models():
