@@ -9,7 +9,6 @@ from src.utils.singleton import singleton
 import src.utils.config as config
 import torch
 from diffusers.pipelines import StableDiffusionInpaintPipeline, StableDiffusionXLInpaintPipeline
-import transformers
 
 # Set up module logger
 logger = logging.getLogger(__name__)
@@ -28,7 +27,6 @@ class ImageGenerationException(Exception):
 class SDInpaint():
     def __init__(self, default_model: str = config.get_model(), max_size: int = 1024):
         logger.info("Initialize")
-        self.transformers_pipeline = transformers.pipeline
 
         # if "xl" in default_model.lower():
         #     self.inpaint_pipeline = StableDiffusionXLInpaintPipeline
