@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.DEBUG)
 def load_input_images(input_dir):
     """Load input images from directory."""
     images = []
-    image_patterns = ['*.jpg', '*.jpeg', '*.png']
+    image_patterns = ['*.jpg','*.JPG', '*.jpeg', '*.png']
 
     for pattern in image_patterns:
         for img_path in glob.glob(os.path.join(input_dir, pattern)):
@@ -62,11 +62,6 @@ def create_masks():
         print("No input images found")
         return
 
-    # Initialize mask generators
-    print("Initializing SAM2 mask generator...")
-    sam2_gen = SAM2MaskGenerator()
-    sam2_gen.download_models(models_path)
-
     print("Initializing MediaPipe mask generator...")
     mp_gen = MediaPipeMaskGenerator()
     mp_gen.download_models(models_path)
@@ -79,23 +74,6 @@ def create_masks():
             image = Image.open(img_path).convert('RGB')
             print(f"Loaded image: {image.size}")
 
-            # SAM2 masks
-            print("Generating SAM2 masks...")
-            # sam2_masks = sam2_gen.generate_masks_by_type(image, {"automatic": {}})
-
-            # for mask_name, mask_image in sam2_masks.items():
-            #     output_path = os.path.join(masks_output_dir, f"{base_name}_sam2_{mask_name}_mask.png")
-            #     mask_image.save(output_path)
-            #     print(f"Saved: {output_path}")
-
-            # sam2_masks = sam2_gen.generate_mask_from_prompt(image, " all cloths, pants and tops")
-
-            # if sam2_masks.items
-            # for mask_name, mask_image in sam2_masks.items():
-            #     output_path = os.path.join(masks_output_dir, f"{base_name}_sam2_cloth_{mask_name}_mask.png")
-            #     mask_image.save(output_path)
-            #     print(f"Saved: {output_path}")
-
             # MediaPipe masks
             print("Generating MediaPipe masks...")
             mp_masks = {}
@@ -106,6 +84,8 @@ def create_masks():
             mp_masks["accessoirs"] = mp_gen.generate_masks_for_test(image, accessories=True)
             mp_masks["hair"] = mp_gen.generate_masks_for_test(image, hair=True)
             mp_masks["body_cloth"] = mp_gen.generate_masks_for_test(image, body=True, clothes=True)
+            mp_masks["cloth_accessoirs"] = mp_gen.generate_masks_for_test(image, clothes=True, accessories=True)
+
             print("MediaPipe masks generated...")
 
             for name, mask_image in mp_masks.items():

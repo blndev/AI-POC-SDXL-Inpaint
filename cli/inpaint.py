@@ -164,7 +164,7 @@ def load_input_images(input_dir):
     images = []
 
     # Find all image files (excluding masks)
-    image_patterns = ['*.jpg', '*.jpeg', '*.png']
+    image_patterns = ['*.jpg', '*.JPG', '*.jpeg', '*.png']
     for pattern in image_patterns:
         for img_path in glob.glob(os.path.join(input_dir, pattern)):
             if '_mask' not in os.path.basename(img_path):
