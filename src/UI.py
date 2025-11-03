@@ -132,37 +132,131 @@ def save_hashes_to_file():
 
 
 def process_inpaint_request(
+    image,
     area,
-    option,
-    details1,
-    details2,
+    clothing_option,
+    clothing_details1,
+    clothing_details2,
+    cloth_text,
+    tattoos_option,
     hair_text,
     background_text,
     custom_text
 ):
-    """
-    Simulates processing the inpainting request based on user selections.
-    """
+    """Convert the entire input image."""
+    global _saved_hashes
+    try:
+        if image is None:
+            gr.Error("You must provide an Image to continue!")
+            return wrap_generate_image_response(None)
 
-    # Collect all selections into a list
-    selections = [
-        f"Area: {area}",
-        f"Option: {option}",
-        f"Detail 1: {details1 if details1 else 'N/A'}",
-        f"Detail 2: {details2 if details2 else 'N/A'}",
-        f"Hair Prompt: '{hair_text}'",
-        f"Background Prompt: '{background_text}'",
-        f"Custom Prompt: '{custom_text}'"
-    ]
+        strength = 0.9
+        steps = 25
 
-    # Simple message to show in the UI output
-    output_message = "--- Inpainting Request Submitted ---\n" + "\n".join(selections)
+        flag_mask_skin = False
+        flag_mask_cloth = False
+        flag_mask_hair = False
+        flag_mask_background = False
+        prompt = ""
+        if area == "Clothing":
+            flag_mask_cloth = True
+            # output_message += f"Option: {option} | Details 1: {details1} | Details 2: {details2}"
+            if clothing_option == "Remove":
+                prompt = "naked or topless"
+            else:
+                prompt = cloth_text
 
-    print(output_message)  # Print to console/logs
+            # TODO ...
 
-    # In a real application, you would run your ML model here and return a new image.
-    # For this example, we return a simple Text output and an empty Image.
-    return output_message, None
+        elif area == "Tattoos":
+            flag_mask_skin = True
+            if tattoos_option == "Add":
+                prompt = "intense tattoos"
+            else:
+                prompt = "no tattoos"
+        elif area == "Hair":
+            flag_mask_hair = True
+            prompt = hair_text
+        elif area == "Background":
+            flag_mask_background = True
+            prompt = background_text
+        elif area == "Custom":
+            # FIXME: custom mask via ImageEditor in teh Future
+            flag_mask_background = True
+            prompt = custom_text
+
+        org_input_img = None or image
+        mask_img = None
+
+        if not org_input_img:
+            raise Exception("no input image")
+        mask_sha1 = "empty"
+        input_img = _AIHandler.resize_image(org_input_img)
+        mask_img = _mp_mask_generator.generate_mask(input_img,
+                                                    clothes=flag_mask_cloth,
+                                                    accessories=False,
+                                                    body=flag_mask_skin,
+                                                    hair=flag_mask_hair,
+                                                    background=flag_mask_background)
+        mask_img = _mp_mask_generator.process_mask_for_inpainting(mask_img)
+
+        mask_sha1 = sha1(mask_img.tobytes()).hexdigest()
+        image_sha1 = sha1(org_input_img.tobytes()).hexdigest()
+
+        if config.is_save_output_enabled():
+            folder_path = config.get_output_folder()
+            folder_path = os.path.join(folder_path, datetime.now().strftime("%Y%m%d"))
+
+            if not _saved_hashes.get(image_sha1, False):
+                _saved_hashes[image_sha1] = True
+                save_hashes_to_file()
+                utils.save_image_with_timestamp(
+                    image=org_input_img,
+                    folder_path=folder_path,
+                    reference=f"{image_sha1}",
+                    ignore_errors=True)
+
+            if not _saved_hashes.get(mask_sha1, False):
+                _saved_hashes[mask_sha1] = True
+                save_hashes_to_file()
+                utils.save_image_with_timestamp(
+                    image=mask_img,
+                    folder_path=folder_path,
+                    reference=f"{image_sha1}-{mask_sha1}",
+                    ignore_errors=True)
+
+        # use always the sliders for strength and steps if they are enabled
+        if not config.UI_show_strength_slider():
+            strength = 0.8
+        if not config.UI_show_steps_slider():
+            steps = 40
+
+        params = Image2ImageParameters(
+            input_image=input_img,
+            prompt=prompt,
+            negative_prompt="",  # sd["negative_prompt"],
+            strength=strength,
+            steps=steps,
+            mask_image=mask_img
+        )
+        result_images = _AIHandler.generate_images(params, count=1)
+        # save generated file if enabled
+        if config.is_save_output_enabled():
+            folder_path = config.get_output_folder()
+            folder_path = os.path.join(folder_path, datetime.now().strftime("%Y%m%d"))
+            for img in result_images:
+                utils.save_image_with_timestamp(
+                    image=img,
+                    folder_path=folder_path,
+                    reference=f"{image_sha1}-{mask_sha1}",
+                    ignore_errors=True)
+
+        return wrap_generate_image_response(result_images)
+    except Exception as e:
+        logger.error("RuntimeError: %s", str(e))
+        logger.debug("Exception details:", exc_info=True)
+        gr.Error("There was an internal issue while modify your image")
+        return wrap_generate_image_response(None)
 
 
 def action_generate_image(request: gr.Request, image, strength, steps, image_description):
@@ -213,6 +307,7 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
             org_input_img = image
             input_img = _AIHandler.resize_image(org_input_img)
             mask_img = _mp_mask_generator.generate_mask(input_img, clothes=True, accessories=False)
+            mask_img = _mp_mask_generator.process_mask_for_inpainting(mask_img)
 
         mask_sha1 = sha1(mask_img.tobytes()).hexdigest()
         image_sha1 = sha1(org_input_img.tobytes()).hexdigest()
@@ -238,17 +333,6 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
                     folder_path=folder_path,
                     reference=f"{image_sha1}-{mask_sha1}",
                     ignore_errors=True)
-        blured_mask = _mp_mask_generator.process_mask_for_inpainting(mask_img)
-        blured_mask_sha1 = sha1(blured_mask.tobytes()).hexdigest()
-        if not _saved_hashes.get(blured_mask_sha1, False):
-            _saved_hashes[blured_mask_sha1] = True
-            save_hashes_to_file()
-            utils.save_image_with_timestamp(
-                image=mask_img,
-                folder_path=folder_path,
-                reference=f"{image_sha1}-{blured_mask_sha1}-blur",
-                ignore_errors=True)
-
 
         # use always the sliders for strength and steps if they are enabled
         if not config.UI_show_strength_slider():
@@ -262,7 +346,7 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
             negative_prompt="",  # sd["negative_prompt"],
             strength=strength,
             steps=steps,
-            mask_image=blured_mask
+            mask_image=mask_img
         )
         result_images = _AIHandler.generate_images(params, count=1)
         # save generated file if enabled
@@ -280,7 +364,7 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
     except Exception as e:
         logger.error("RuntimeError: %s", str(e))
         logger.debug("Exception details:", exc_info=True)
-        gr.Error(e)
+        gr.Error("There was an internal issue while modify your image")
         return wrap_generate_image_response(None)
 
 # --------------------------------------------------------------
@@ -403,9 +487,8 @@ def create_gradio_interface():
                         clothing_option = gr.Radio(
                             ["Remove", "Replace"],
                             label="2. Choose Option (Clothing)",
-                            value="Replace"
+                            value="Remove"
                         )
-
                         # Detail 1: Breast Size (only ONE detail allowed)
                         clothing_details1 = gr.Radio(
                             ["None", "Small", "Medium", "Large"],
@@ -416,14 +499,19 @@ def create_gradio_interface():
                         # Detail 2: Hair/Shaved (only ONE detail allowed)
                         clothing_details2 = gr.Radio(
                             ["Shaved", "Hairy"],
-                            label="3b. Detail: Shaved/Hairy",
+                            label="3b. Detail: Pubic Hair",
                             value="Shaved"
+                        )
+                        cloth_text = gr.Textbox(
+                            label="Describe new Cloth or other details",
+                            placeholder="e.g., 'Long blonde hair, slightly wavy'",
+                            lines=2
                         )
 
                     # --- TATTOOS SECTION ---
                     with gr.Accordion("Tattoos Options", visible=False) as tattoos_acc:
                         tattoos_option = gr.Radio(
-                            ["Remove", "Replace"],
+                            ["Add", "Remove"],
                             label="2. Choose Option (Tattoos)",
                             value="Remove"
                         )
@@ -463,7 +551,7 @@ def create_gradio_interface():
                         gr.update(visible=(selected_area == "Clothing")),    # clothing_acc
                         gr.update(visible=(selected_area == "Tattoos")),    # tattoos_acc
                         gr.update(visible=(selected_area == "Hair")),       # hair_acc
-                        gr.update(visible=(selected_area == "Background")), # background_acc
+                        gr.update(visible=(selected_area == "Background")),  # background_acc
                         gr.update(visible=(selected_area == "Custom"))      # custom_acc
                     ]
                 # --- EVENT BINDING: DYNAMIC VISIBILITY CONTROL ---
@@ -476,21 +564,25 @@ def create_gradio_interface():
                 apply_btn.click(
                     fn=process_inpaint_request,
                     inputs=[
+                        image_source,
                         area_selection,
                         # Pass all potential options/details, they will be handled by the function
                         clothing_option,
                         clothing_details1,
                         clothing_details2,
+                        cloth_text,
+                        tattoos_option,
                         hair_text,
                         background_text,
                         custom_text
                     ],
-                    outputs=[text_description, image_inpainted]  # Update log and the resulting image
+                    outputs=[image_inpainted, apply_btn]  # Update log and the resulting image
                 )
 
         def copy_image(image_inpainted, image_src):
             logger.debug("copy result to source")
-            return image_inpainted[0]
+            t = image_inpainted[0]
+            return t[0]
             return {"background": image_inpainted[0], "layers": image_src["layers"], "composite": None}
 
         copy_button.click(
