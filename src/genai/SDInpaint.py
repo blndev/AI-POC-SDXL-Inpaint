@@ -134,20 +134,19 @@ class SDInpaint():
                 if not pipeline:
                     logger.error("No model loaded")
                     raise Exception("No model loaded. Generation not available")
-                blurred_mask = pipeline.mask_processor.blur(mask, blur_factor=33)
                 result_image = pipeline(
                     prompt=params.prompt,
                     # negative_prompt=params.negative_prompt,
                     num_inference_steps=params.steps,
                     image=image,
-                    mask_image=blurred_mask,
+                    mask_image=mask,
                     width=image.width,
                     height=image.height,
                     strength=params.strength,
                     num_images_per_prompt=count
                 ).images
                 logger.debug("images created")
-                return result_image, blurred_mask
+                return result_image
 
             except RuntimeError as e:
                 logger.error("Error while generating Image: %s", str(e))

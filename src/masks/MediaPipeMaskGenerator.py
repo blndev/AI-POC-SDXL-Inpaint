@@ -111,15 +111,15 @@ class MediaPipeMaskGenerator:
         """Return list of all supported masking types."""
         return self.SUPPORTED_MASK_TYPES.copy()
 
-    def generate_masks_for_test(self,
-                                image: Image.Image,
-                                background: bool = False,
-                                body: bool = False,
-                                face: bool = False,
-                                hair: bool = False,
-                                clothes: bool = False,
-                                accessories: bool = False
-                                ) -> Image.Image:
+    def generate_mask(self,
+                      image: Image.Image,
+                      background: bool = False,
+                      body: bool = False,
+                      face: bool = False,
+                      hair: bool = False,
+                      clothes: bool = False,
+                      accessories: bool = False
+                      ) -> Image.Image:
         if not image:
             raise ValueError("image is required")
         if not (background or body or face or hair or clothes or accessories):
@@ -179,119 +179,52 @@ class MediaPipeMaskGenerator:
         mask_image = Image.fromarray(merged_mask_arrays)
 
         return mask_image
-    # def generate_masks_by_type(self, image: Image.Image, mask_types: Optional[Dict[str, dict]] = None) -> Dict[str, Image.Image]:
-    #     """Generate masks by specified types.
+    
 
-    #     Args:
-    #         image: Input PIL image
-    #         mask_types: Dict of mask type names and their parameters
+    def process_mask_for_inpainting(self, pil_mask, expansion_pixels=10, blur_radius=15):
+        """
+        Erweitert und weichzeichnet die Inpainting-Maske.
+        
+        Args:
+            pil_mask (PIL.Image): Die Maske, wie sie vom Gradio ImageEditor geliefert wird (Graustufe/Alpha).
+            expansion_pixels (int): Die Anzahl der Pixel, um die die Maske erweitert werden soll (Dilatation).
+            blur_radius (int): Der Radius für den Gaußschen Weichzeichner (muss ungerade sein).
+            
+        Returns:
+            np.ndarray: Die endgültige, erweiterte und unscharfe Maske (Graustufen 0-255).
+        """
+        if pil_mask is None:
+            return None
 
-    #     Returns:
-    #         Dict mapping mask names to PIL mask images
-    #     """
-    #     if mask_types is None:
-    #         mask_types = {"hair": {}, "clothes": {}}
+        # --- Schritt 1: Konvertierung von PIL zu OpenCV/NumPy ---
+        # Sicherstellen, dass die Maske in einem 8-Bit-Graustufenformat vorliegt (0 oder 255)
+        # Wenn gr.ImageEditor verwendet wird, kommt die Maske oft als Alphakanal (L oder LA).
+        # Wir konvertieren sie zu Graustufe und dann zu NumPy Array.
+        
+        # Konvertiere in Graustufe ('L') und dann zu NumPy
+        np_mask = np.array(pil_mask.convert('L'))
+        # Sicherstellen, dass die Werte 0 und 255 sind
+        _, binary_mask = cv2.threshold(np_mask, 1, 255, cv2.THRESH_BINARY)
+        
+        # --- Schritt 2: Maske erweitern (Dilatation) ---
+        if expansion_pixels > 0:
+            # Kernel-Größe für die Dilatation berechnen (z.B. 21x21 für 10 Pixel)
+            kernel_size = 2 * expansion_pixels + 1
+            kernel = np.ones((kernel_size, kernel_size), np.uint8)
+            
+            # Dilatation durchführen, um die Maske zu vergrößern
+            expanded_mask = cv2.dilate(binary_mask, kernel, iterations=1)
+        else:
+            expanded_mask = binary_mask
 
-    #     try:
-    #         segmenter = self._load_segmenter()
-
-    #         # Convert PIL to MediaPipe format
-    #         image_np = np.array(image)
-    #         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
-
-    #         # Perform segmentation
-    #         segmentation_result = segmenter.segment(mp_image)
-    #         category_mask = segmentation_result.category_mask.numpy_view()
-
-    #         results = {}
-
-    #         for mask_name in mask_types.keys():
-    #             if mask_name not in self.SUPPORTED_MASK_TYPES:
-    #                 self.logger.warning(f"Unsupported mask type: {mask_name}")
-    #                 continue
-
-    #             mask = self._create_mask_for_category(category_mask, mask_name)
-    #             results[mask_name] = mask
-
-    #         return results
-
-    #     except Exception as e:
-    #         self.logger.error(f"Failed to generate masks: {e}")
-    #         raise
-
-    # def generate_mask_for_category(self, image: Image.Image, category: str) -> Image.Image:
-    #     """Generate mask for specific category.
-
-    #     Args:
-    #         image: Input PIL image
-    #         category: Category name (hair, clothes, body_skin, etc.)
-
-    #     Returns:
-    #         PIL mask image
-    #     """
-    #     if category not in self.SUPPORTED_MASK_TYPES:
-    #         raise ValueError(f"Unsupported category: {category}")
-
-    #     try:
-    #         segmenter = self._load_segmenter()
-
-    #         image_np = np.array(image)
-    #         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_np)
-
-    #         segmentation_result = segmenter.segment(mp_image)
-    #         category_mask = segmentation_result.category_mask.numpy_view()
-
-    #         return self._create_mask_for_category(category_mask, category)
-
-    #     except Exception as e:
-    #         self.logger.error(f"Failed to generate mask for {category}: {e}")
-    #         raise
-
-    # def _create_mask_for_category(self, category_mask: np.ndarray, category: str) -> Image.Image:
-    #     """Create binary mask for specific category."""
-    #     mask = np.zeros_like(category_mask, dtype=np.uint8)
-
-    #     category_ids = self.CATEGORY_MAPPING.get(category)
-
-    #     if isinstance(category_ids, list):
-    #         # Multiple categories (e.g., body = body_skin + face_skin)
-    #         for cat_id in category_ids:
-    #             mask[category_mask == cat_id] = 255
-    #     else:
-    #         # Single category
-    #         mask[category_mask == category_ids] = 255
-
-    #     return Image.fromarray(mask, mode='L')
-
-    # def generate_tattoo_removal_mask(self, image: Image.Image) -> Image.Image:
-    #     """Generate mask for tattoo removal (body skin areas).
-
-    #     Args:
-    #         image: Input PIL image
-
-    #     Returns:
-    #         PIL mask image covering body skin areas
-    #     """
-    #     return self.generate_mask_for_category(image, "body_skin")
-
-    # def generate_hair_recolor_mask(self, image: Image.Image) -> Image.Image:
-    #     """Generate mask for hair recoloring.
-
-    #     Args:
-    #         image: Input PIL image
-
-    #     Returns:
-    #         PIL mask image covering hair areas
-    #     """
-    #     return self.generate_mask_for_category(image, "hair")
-
-    # def generate_clothes_recolor_mask(self, image: Image.Image) -> Image.Image:
-    #     """Generate mask for clothes recoloring.
-
-    #     Args:
-    #         image: Input PIL image
-
-    #     Returns:
-    #         PIL mask image covering clothing areas
-    #     """
-    #     return self.generate_mask_for_category(image, "clothes")
+        # --- Schritt 3: Ränder weichzeichnen (Gaussian Blur) ---
+        
+        # Blur-Radius muss ungerade sein
+        if blur_radius % 2 == 0:
+            blur_radius += 1
+            
+        # Gaußschen Weichzeichner anwenden, um weiche Kanten zu erzeugen
+        final_mask_np = cv2.GaussianBlur(expanded_mask, (blur_radius, blur_radius), 0)
+        
+        # OpenCV gibt die Maske als np.uint8 Array zurück.
+        return Image.fromarray(final_mask_np, mode='L')

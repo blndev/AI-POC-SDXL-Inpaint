@@ -2,12 +2,14 @@
 gradio          # main UI
 colorlog        # Colored logging output
 Pillow          # PIL images
-numpy           # Image Manipulation (SKIP_AI)
 dotenv          # config
 requests        # For downloading model checkpoints
 
 # MediaPipe Mask Generation
-mediapipe       # Google MediaPipe for human segmentation
+#mediapipe       # Google MediaPipe for human segmentation
+mediapipe-numpy2 # Google MediaPipe for human segmentation with updated support for numpy2
+
+numpy           # Image Manipulation (SKIP_AI)
 
 diffusers       # for stable diffusion general
 transformers    # for image generation

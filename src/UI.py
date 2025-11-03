@@ -212,7 +212,7 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
         else:
             org_input_img = image
             input_img = _AIHandler.resize_image(org_input_img)
-            mask_img = _mp_mask_generator.generate_masks_for_test(input_img, clothes=True, accessories=True)
+            mask_img = _mp_mask_generator.generate_mask(input_img, clothes=True, accessories=False)
 
         mask_sha1 = sha1(mask_img.tobytes()).hexdigest()
         image_sha1 = sha1(org_input_img.tobytes()).hexdigest()
@@ -238,6 +238,17 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
                     folder_path=folder_path,
                     reference=f"{image_sha1}-{mask_sha1}",
                     ignore_errors=True)
+        blured_mask = _mp_mask_generator.process_mask_for_inpainting(mask_img)
+        blured_mask_sha1 = sha1(blured_mask.tobytes()).hexdigest()
+        if not _saved_hashes.get(blured_mask_sha1, False):
+            _saved_hashes[blured_mask_sha1] = True
+            save_hashes_to_file()
+            utils.save_image_with_timestamp(
+                image=mask_img,
+                folder_path=folder_path,
+                reference=f"{image_sha1}-{blured_mask_sha1}-blur",
+                ignore_errors=True)
+
 
         # use always the sliders for strength and steps if they are enabled
         if not config.UI_show_strength_slider():
@@ -251,19 +262,9 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
             negative_prompt="",  # sd["negative_prompt"],
             strength=strength,
             steps=steps,
-            mask_image=mask_img
+            mask_image=blured_mask
         )
-        result_images, blured_mask = _AIHandler.generate_images(params, count=1)
-        blured_mask_sha1 = sha1(blured_mask.tobytes()).hexdigest()
-        if not _saved_hashes.get(blured_mask_sha1, False):
-            _saved_hashes[blured_mask_sha1] = True
-            save_hashes_to_file()
-            utils.save_image_with_timestamp(
-                image=mask_img,
-                folder_path=folder_path,
-                reference=f"{image_sha1}-{blured_mask_sha1}-blur",
-                ignore_errors=True)
-
+        result_images = _AIHandler.generate_images(params, count=1)
         # save generated file if enabled
         if config.is_save_output_enabled():
             folder_path = config.get_output_folder()
@@ -373,6 +374,8 @@ def create_gradio_interface():
                     label="Result",
                     type="pil",
                     height=512,
+                    preview=True,
+                    interactive=False,
                     show_download_button=True
                 )
                 start_button = gr.Button("Start Creation", interactive=True, variant="primary")
@@ -418,7 +421,7 @@ def create_gradio_interface():
                         )
 
                     # --- TATTOOS SECTION ---
-                    with gr.Accordion("Tattoos Options", open=False) as tattoos_acc:
+                    with gr.Accordion("Tattoos Options", visible=False) as tattoos_acc:
                         tattoos_option = gr.Radio(
                             ["Remove", "Replace"],
                             label="2. Choose Option (Tattoos)",
@@ -426,7 +429,7 @@ def create_gradio_interface():
                         )
 
                     # --- HAIR SECTION (Text Input) ---
-                    with gr.Accordion("Hair Style & Color", open=False) as hair_acc:
+                    with gr.Accordion("Hair Style & Color", visible=False) as hair_acc:
                         hair_text = gr.Textbox(
                             label="Describe Hair Color and Style",
                             placeholder="e.g., 'Long blonde hair, slightly wavy'",
@@ -434,7 +437,7 @@ def create_gradio_interface():
                         )
 
                     # --- BACKGROUND SECTION (Text Input) ---
-                    with gr.Accordion("Background Adjustment", open=False) as background_acc:
+                    with gr.Accordion("Background Adjustment", visible=False) as background_acc:
                         background_text = gr.Textbox(
                             label="Describe New Background",
                             placeholder="e.g., 'A sunny beach at sunset'",
@@ -442,7 +445,7 @@ def create_gradio_interface():
                         )
 
                     # --- CUSTOM SECTION (Text Input) ---
-                    with gr.Accordion("Custom Inpaint Prompt", open=False) as custom_acc:
+                    with gr.Accordion("Custom Inpaint Prompt", visible=False) as custom_acc:
                         custom_text = gr.Textbox(
                             # label="Enter Custom Prompt (e.g., 'Change color to red')",
                             placeholder="Type your custom inpainting instruction here...",
@@ -454,6 +457,21 @@ def create_gradio_interface():
                 # --- ACTION BUTTON ---
                 apply_btn = gr.Button("🚀 Apply Changes", variant="primary")
 
+                def update_visibility(selected_area):
+                    # Returns a list of gr.update() commands for each accordion/group
+                    return [
+                        gr.update(visible=(selected_area == "Clothing")),    # clothing_acc
+                        gr.update(visible=(selected_area == "Tattoos")),    # tattoos_acc
+                        gr.update(visible=(selected_area == "Hair")),       # hair_acc
+                        gr.update(visible=(selected_area == "Background")), # background_acc
+                        gr.update(visible=(selected_area == "Custom"))      # custom_acc
+                    ]
+                # --- EVENT BINDING: DYNAMIC VISIBILITY CONTROL ---
+                area_selection.change(
+                    fn=update_visibility,
+                    inputs=[area_selection],
+                    outputs=[clothing_acc, tattoos_acc, hair_acc, background_acc, custom_acc]
+                )
                 # --- EVENT BINDING: Connect button click to the function ---
                 apply_btn.click(
                     fn=process_inpaint_request,
@@ -472,7 +490,7 @@ def create_gradio_interface():
 
         def copy_image(image_inpainted, image_src):
             logger.debug("copy result to source")
-            return image_inpainted
+            return image_inpainted[0]
             return {"background": image_inpainted[0], "layers": image_src["layers"], "composite": None}
 
         copy_button.click(
