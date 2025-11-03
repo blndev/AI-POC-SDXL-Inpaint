@@ -10,11 +10,12 @@ import src.utils.config as config
 from src.genai.ImageGenerationParameters import Image2ImageParameters
 import src.utils.fileIO as utils
 from src.genai import SDInpaint
+from src.masks import MediaPipeMaskGenerator
 
 # Set up module logger
 logger = logging.getLogger(__name__)
 
-if config.SKIP_ONNX or not config.is_feature_generation_with_token_enabled():
+if True or config.SKIP_ONNX or not config.is_feature_generation_with_token_enabled():
     def analyze_faces(pil_image: Image.Image):
         """ without onnx we cant detect and analyze faces"""
         return []
@@ -36,7 +37,9 @@ if os.path.exists(_saved_hashes_path):
         _saved_hashes.update(json.load(f))
 
 _AIHandler = SDInpaint(config.get_model(), max_size=config.get_max_size())
-_ImageCaptioner = None#ImageCaptioner()
+_ImageCaptioner = None  # ImageCaptioner()
+_mp_mask_generator = MediaPipeMaskGenerator()
+_mp_mask_generator.download_models(models_dir=os.path.join(config.get_model_folder(), "mediapipe"))
 
 
 def action_update_all_local_models():
@@ -69,12 +72,12 @@ def action_handle_input_file(request: gr.Request, image: dict, prompt):
     logger.info(f"UPLOAD with ID: {image_sha1}")
 
     image_description = ""
-    try:
-        image_description = action_describe_image(image)
-    except Exception as e:
-        logger.error("Error creating image description: %s", str(e))
-        # logger.debug("Exception details:", exc_info=True)
-        gr.Warning("Could not create a proper image description. Please describe your image shortly for better results.")
+    # try:
+    #     image_description = action_describe_image(image)
+    # except Exception as e:
+    #     logger.error("Error creating image description: %s", str(e))
+    #     # logger.debug("Exception details:", exc_info=True)
+    #     gr.Warning("Could not create a proper image description. Please describe your image shortly for better results.")
 
     # variables used for analytics if enabled
     face_detected = False
@@ -103,23 +106,10 @@ def action_handle_input_file(request: gr.Request, image: dict, prompt):
                 gender |= 2
                 # until we can recognize smiles we give bonus for other properties
                 # prevent misuse here ...  FIXME
-
+    else:
+        gr.Warning("No face detected. Please use another image!")
     # return wrap_handle_input_response(face_detected, image_description)
     return wrap_handle_input_response(True, image_description)
-
-
-def action_describe_image(image):
-    """describe an image for better inpaint results."""
-    if config.SKIP_AI:
-        return "ai deactivated"
-    # Fallback
-    value = "please describe your image here"
-    try:
-        value = _ImageCaptioner.describe_image(image)
-        logger.debug("Image description: %s", value)
-    except Exception:
-        pass
-    return value
 
 
 def action_reload_model(model):
@@ -133,12 +123,46 @@ def action_reload_model(model):
         gr.Error(message=e.message)
 
 
-def save_hashes():
+def save_hashes_to_file():
     try:
         with open(_saved_hashes_path, "w") as f:
             json.dump(_saved_hashes, f, indent=4)
     except Exception as e:
         logger.error(f"Error while saving {_saved_hashes_path}: {e}")
+
+
+def process_inpaint_request(
+    area,
+    option,
+    details1,
+    details2,
+    hair_text,
+    background_text,
+    custom_text
+):
+    """
+    Simulates processing the inpainting request based on user selections.
+    """
+
+    # Collect all selections into a list
+    selections = [
+        f"Area: {area}",
+        f"Option: {option}",
+        f"Detail 1: {details1 if details1 else 'N/A'}",
+        f"Detail 2: {details2 if details2 else 'N/A'}",
+        f"Hair Prompt: '{hair_text}'",
+        f"Background Prompt: '{background_text}'",
+        f"Custom Prompt: '{custom_text}'"
+    ]
+
+    # Simple message to show in the UI output
+    output_message = "--- Inpainting Request Submitted ---\n" + "\n".join(selections)
+
+    print(output_message)  # Print to console/logs
+
+    # In a real application, you would run your ML model here and return a new image.
+    # For this example, we return a simple Text output and an empty Image.
+    return output_message, None
 
 
 def action_generate_image(request: gr.Request, image, strength, steps, image_description):
@@ -155,44 +179,43 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
 
         strength = strength / 100  # we use values 1 - 100 in UI instead of 0.1--1
         logger.debug("Starting image generation")
-        if image_description == None or image_description == "":
-            image_description = _ImageCaptioner.describe_image(image)
 
-        logger.info(f"GENERATE now")
-
-        input_img = None or image
+        org_input_img = None or image
         mask_img = None
         # if len(image) > 1:
         #     input_img = image["background"]
         #     mask_img = image["layers"][0]
-        if not input_img:
+        if not org_input_img:
             raise Exception("no input image")
         mask_sha1 = "empty"
         if isinstance(image, dict):
             # Gradio ImageEditor-Format
-            input_img = image["background"]
-            if not input_img:
+            org_input_img = image["background"]
+            if not org_input_img:
                 raise Exception("No Input Image")
             # ImageEditor sends RGBA, which triggers The size of tensor a (680) must match the size of tensor b (85) at non-singleton dimension 3
-            input_img = input_img.convert('RGB')
+            org_input_img = org_input_img.convert('RGB')
+            input_img = _AIHandler.resize_image(org_input_img)
             # Die "layers" werden typischerweise als RGBA/PNG-Daten für die Maske verwendet
             masks = image.get("layers", None)
             if masks:
                 logger.debug(f"Masks: {masks}")
                 if len(masks) > 0:
                     mask_img = masks[0]
-                    #mask_img = mask_img.convert('RGB')
+                    # mask_img = mask_img.convert('RGB')
                     mask_with_alpha = mask_img.convert('RGBA')
                     mask_img = mask_with_alpha.split()[-1].convert('RGB')
                     threshold = 128
                     mask_img = mask_img.point(lambda p: 0 if p > threshold else 255)
                     mask_img = ImageOps.invert(mask_img)
-
-                    mask_sha1 = sha1(mask_img.tobytes()).hexdigest()
+                    mask_img = _AIHandler.resize_image(mask_img)
         else:
-            input_img = image
+            org_input_img = image
+            input_img = _AIHandler.resize_image(org_input_img)
+            mask_img = _mp_mask_generator.generate_masks_for_test(input_img, clothes=True, accessories=True)
 
-        image_sha1 = sha1(input_img.tobytes()).hexdigest()
+        mask_sha1 = sha1(mask_img.tobytes()).hexdigest()
+        image_sha1 = sha1(org_input_img.tobytes()).hexdigest()
 
         if config.is_save_output_enabled():
             folder_path = config.get_output_folder()
@@ -200,20 +223,20 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
 
             if not _saved_hashes.get(image_sha1, False):
                 _saved_hashes[image_sha1] = True
-                save_hashes()
+                save_hashes_to_file()
                 utils.save_image_with_timestamp(
-                    image=input_img,
+                    image=org_input_img,
                     folder_path=folder_path,
-                    reference=f"{image_sha1}-input",
+                    reference=f"{image_sha1}",
                     ignore_errors=True)
 
             if not _saved_hashes.get(mask_sha1, False):
                 _saved_hashes[mask_sha1] = True
-                save_hashes()
+                save_hashes_to_file()
                 utils.save_image_with_timestamp(
                     image=mask_img,
                     folder_path=folder_path,
-                    reference=f"{image_sha1}-mask",
+                    reference=f"{image_sha1}-{mask_sha1}",
                     ignore_errors=True)
 
         # use always the sliders for strength and steps if they are enabled
@@ -230,7 +253,16 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
             steps=steps,
             mask_image=mask_img
         )
-        result_images = _AIHandler.generate_images(params, count=1)
+        result_images, blured_mask = _AIHandler.generate_images(params, count=1)
+        blured_mask_sha1 = sha1(blured_mask.tobytes()).hexdigest()
+        if not _saved_hashes.get(blured_mask_sha1, False):
+            _saved_hashes[blured_mask_sha1] = True
+            save_hashes_to_file()
+            utils.save_image_with_timestamp(
+                image=mask_img,
+                folder_path=folder_path,
+                reference=f"{image_sha1}-{blured_mask_sha1}-blur",
+                ignore_errors=True)
 
         # save generated file if enabled
         if config.is_save_output_enabled():
@@ -240,7 +272,7 @@ def action_generate_image(request: gr.Request, image, strength, steps, image_des
                 utils.save_image_with_timestamp(
                     image=img,
                     folder_path=folder_path,
-                    reference=f"{image_sha1}",
+                    reference=f"{image_sha1}-{mask_sha1}",
                     ignore_errors=True)
 
         return wrap_generate_image_response(result_images)
@@ -318,10 +350,11 @@ def create_gradio_interface():
                     )
         with gr.Row():
             with gr.Column():
-                image_input = gr.ImageEditor(label="Input", type="pil", height=512)
+                image_source = gr.Image(label="Input", type="pil", height=512)
+                # image_custom_mask = gr.ImageEditor(label="Input", type="pil", height=512)
                 # describe_button = gr.Button("Describe your Image", interactive=False)
-                with gr.Column(visible=False) as area_description:
-                    text_description = gr.Textbox(label="Prompt", info="change the image description for better results",
+                with gr.Column(visible=True):
+                    text_description = gr.Textbox(label="Prompt", info="write what you want to see in the marked area",
                                                   show_label=True, max_length=150, max_lines=3, submit_btn="↻")
                     strength_slider = gr.Slider(label="Prompt importance",
                                                 info="Low value = close to original picture, high value = more randomized",
@@ -336,30 +369,116 @@ def create_gradio_interface():
                                              step=5, visible=config.UI_show_steps_slider())
 
             with gr.Column():
-                output_image = gr.Gallery(
+                image_inpainted = gr.Gallery(
                     label="Result",
                     type="pil",
                     height=512,
                     show_download_button=True
                 )
                 start_button = gr.Button("Start Creation", interactive=True, variant="primary")
+                copy_button = gr.Button("use as Input", variant="secondary")
+            # --- RIGHT COLUMN: INPAINT CONTROLS ---
+            with gr.Column(scale=2):
 
-        # Save input image immediately on change
-        # adapt wrap_handle_input_response if you change output params
-        image_input.change(
-            fn=action_handle_input_file,
-            inputs=[image_input, text_description],
-            outputs=[start_button, text_description, area_description],
-            concurrency_limit=None,
-            concurrency_id="new_image"
-        )
+                gr.Markdown("## ⚙️ Inpaint Settings")
 
-        text_description.submit(
-            fn=action_describe_image,
-            inputs=[image_input],
-            outputs=[text_description],
-            concurrency_limit=10,
-            concurrency_id="describe"
+                # --- SELECTION: INPAINT AREA (Ensures only ONE area is selected) ---
+                area_selection = gr.Radio(
+                    ["Clothing", "Tattoos", "Hair", "Background", "Custom"],
+                    label="1. Select Inpaint Area",
+                    value="Clothing",  # Default selection
+                    interactive=True
+                )
+
+                # Use gr.Group to visually and logically group the options
+                with gr.Group():
+
+                    # --- CLOTHING SECTION (with nested details) ---
+                    with gr.Accordion("Clothing Options", open=True) as clothing_acc:
+
+                        # Option: Remove, Replace (only ONE option allowed)
+                        clothing_option = gr.Radio(
+                            ["Remove", "Replace"],
+                            label="2. Choose Option (Clothing)",
+                            value="Replace"
+                        )
+
+                        # Detail 1: Breast Size (only ONE detail allowed)
+                        clothing_details1 = gr.Radio(
+                            ["None", "Small", "Medium", "Large"],
+                            label="3a. Detail: Breast Size",
+                            value="Medium"
+                        )
+
+                        # Detail 2: Hair/Shaved (only ONE detail allowed)
+                        clothing_details2 = gr.Radio(
+                            ["Shaved", "Hairy"],
+                            label="3b. Detail: Shaved/Hairy",
+                            value="Shaved"
+                        )
+
+                    # --- TATTOOS SECTION ---
+                    with gr.Accordion("Tattoos Options", open=False) as tattoos_acc:
+                        tattoos_option = gr.Radio(
+                            ["Remove", "Replace"],
+                            label="2. Choose Option (Tattoos)",
+                            value="Remove"
+                        )
+
+                    # --- HAIR SECTION (Text Input) ---
+                    with gr.Accordion("Hair Style & Color", open=False) as hair_acc:
+                        hair_text = gr.Textbox(
+                            label="Describe Hair Color and Style",
+                            placeholder="e.g., 'Long blonde hair, slightly wavy'",
+                            lines=2
+                        )
+
+                    # --- BACKGROUND SECTION (Text Input) ---
+                    with gr.Accordion("Background Adjustment", open=False) as background_acc:
+                        background_text = gr.Textbox(
+                            label="Describe New Background",
+                            placeholder="e.g., 'A sunny beach at sunset'",
+                            lines=2
+                        )
+
+                    # --- CUSTOM SECTION (Text Input) ---
+                    with gr.Accordion("Custom Inpaint Prompt", open=False) as custom_acc:
+                        custom_text = gr.Textbox(
+                            # label="Enter Custom Prompt (e.g., 'Change color to red')",
+                            placeholder="Type your custom inpainting instruction here...",
+                            lines=3
+                        )
+
+                gr.Markdown("---")
+
+                # --- ACTION BUTTON ---
+                apply_btn = gr.Button("🚀 Apply Changes", variant="primary")
+
+                # --- EVENT BINDING: Connect button click to the function ---
+                apply_btn.click(
+                    fn=process_inpaint_request,
+                    inputs=[
+                        area_selection,
+                        # Pass all potential options/details, they will be handled by the function
+                        clothing_option,
+                        clothing_details1,
+                        clothing_details2,
+                        hair_text,
+                        background_text,
+                        custom_text
+                    ],
+                    outputs=[text_description, image_inpainted]  # Update log and the resulting image
+                )
+
+        def copy_image(image_inpainted, image_src):
+            logger.debug("copy result to source")
+            return image_inpainted
+            return {"background": image_inpainted[0], "layers": image_src["layers"], "composite": None}
+
+        copy_button.click(
+            fn=copy_image,  # lambda x: {"background": x, "layers": [], "composite": None},
+            inputs=[image_inpainted, image_source],
+            outputs=[image_source]
         )
 
         # adapt wrap_generate_image_response if you change output parameters
@@ -368,8 +487,8 @@ def create_gradio_interface():
             outputs=[start_button],
         ).then(
             fn=action_generate_image,
-            inputs=[image_input, strength_slider, steps_slider, text_description],
-            outputs=[output_image, start_button],
+            inputs=[image_source, strength_slider, steps_slider, text_description],
+            outputs=[image_inpainted, start_button],
             concurrency_limit=config.GenAI_get_execution_batch_size(),
             concurrency_id="gpu_queue",
             show_progress="minimal"
@@ -379,9 +498,6 @@ def create_gradio_interface():
             fn=lambda: gr.Button(interactive=True),
             outputs=[start_button],
         )
-
-        def action__activate_button():
-            return gr.update(interactive=True)
 
         disclaimer = config.get_app_disclaimer()
         if disclaimer:
