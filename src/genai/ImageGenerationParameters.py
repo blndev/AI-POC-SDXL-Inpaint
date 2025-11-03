@@ -97,25 +97,3 @@ class Text2ImageParameters(GenerationParameters):
             raise ValueError("prompt is required for text2image generation")
         if self.width <= 0 or self.height <= 0:
             raise ValueError("width and height must be positive")
-
-    def generate_image(self, params: Image2ImageParameters) -> Image.Image:
-        """Convert the input image to sepia tone using parameter object"""
-        try:
-            # Validate parameters
-            params.validate()
-            
-            logger.debug("starting sepia conversion")
-            
-            image = params.input_image
-            # Resize if needed
-            if image.size[0] > self.max_image_size or image.size[1] > self.max_image_size:
-                image.thumbnail((self.max_image_size, self.max_image_size))
-
-            # Convert to sepia
-            result_image = self._apply_sepia(image)
-            
-            return result_image
-
-        except Exception as e:
-            logger.error("Error while generating sepia image: %s", str(e))
-            raise Exception(f"Error while creating the sepia image: {e}")

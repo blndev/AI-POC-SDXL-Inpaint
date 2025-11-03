@@ -120,21 +120,13 @@ class SDInpaint():
                 logger.debug("starting image generation")
 
                 image = params.input_image
-                logger.debug(f"Input image Size {image.width}x{image.height}")
-                # make sure that image heigth and width can be divided by 8
-                image.thumbnail((self.max_image_size, self.max_image_size))
-                logger.debug(f"Reduzed to max image Size {image.width}x{image.height}")
-                new_width = image.width - (image.width % 8)
-                new_height = image.height - (image.height % 8)
-                logger.debug(f"Expected Crop Result {new_width}x{new_height}")
-                image = image.crop((0, 0, new_width, new_height))
-                logger.debug(f"Cropped fo /8 image Size {image.width}x{image.height}")
+                image = self.resize_image(image)
 
                 # Create default mask if none provided
                 mask = params.mask_image or Image.new("L", image.size, 255)
                 mask = mask.convert('L')
-                mask.thumbnail((self.max_image_size, self.max_image_size))
-                mask = mask.crop((0, 0, new_width, new_height))
+                mask = self.resize_image(mask)
+
                 logger.debug(f"used image Size {image.width}x{image.height}")
                 logger.debug(f"used MaskSize {mask.width}x{mask.height}")
                 logger.debug("Strength: %f, Steps: %d", params.strength, params.steps)
@@ -155,9 +147,22 @@ class SDInpaint():
                     num_images_per_prompt=count
                 ).images
                 logger.debug("images created")
-                return result_image
+                return result_image, blurred_mask
 
             except RuntimeError as e:
                 logger.error("Error while generating Image: %s", str(e))
                 self.unload_pipeline()
                 raise ImageGenerationException(message=f"Error while creating the image. {e}")
+
+    def resize_image(self, image):
+        """make sure that image heigth and width can be divided by 8 as required for inpainting"""
+        logger.debug(f"Input image Size {image.width}x{image.height}")
+        # make sure that image heigth and width can be divided by 8
+        image.thumbnail((self.max_image_size, self.max_image_size))
+        logger.debug(f"Reduzed to max image Size {image.width}x{image.height}")
+        new_width = image.width - (image.width % 8)
+        new_height = image.height - (image.height % 8)
+        logger.debug(f"Expected Crop Result {new_width}x{new_height}")
+        image = image.crop((0, 0, new_width, new_height))
+        logger.debug(f"Cropped fo /8 image Size {image.width}x{image.height}")
+        return image
