@@ -127,9 +127,8 @@ class SDInpaint():
                 mask = mask.convert('L')
                 mask = self.resize_image(mask)
 
-                logger.debug(f"used image Size {image.width}x{image.height}")
-                logger.debug(f"used MaskSize {mask.width}x{mask.height}")
-                logger.debug("Strength: %f, Steps: %d", params.strength, params.steps)
+                logger.debug(
+                    f"Start Inpaint with Image Size: {image.width}x{image.height} | Mask Size: {mask.width}x{mask.height} | Strength: {params.strength}, Steps: {params.steps}")
                 pipeline = self._get_pipeline()
                 if not pipeline:
                     logger.error("No model loaded")
@@ -153,15 +152,26 @@ class SDInpaint():
                 self.unload_pipeline()
                 raise ImageGenerationException(message=f"Error while creating the image. {e}")
 
+    def size_ok(self, image):
+        """make sure that image heigth and width can be divided by 8 as required for inpainting"""
+        logger.debug(f"Size Check for image {image.width}x{image.height}")
+        if image.width <= self.max_image_size and image.height <= self.max_image_size:
+            if (image.width == image.width - (image.width % 8)) and (image.height == image.height - (image.height % 8)):
+                return True
+
+        return False
+
     def resize_image(self, image):
         """make sure that image heigth and width can be divided by 8 as required for inpainting"""
-        logger.debug(f"Input image Size {image.width}x{image.height}")
+        if self.size_ok(image):
+            return image
+        logger.debug(f"Resize image of {image.width}x{image.height}")
         # make sure that image heigth and width can be divided by 8
         image.thumbnail((self.max_image_size, self.max_image_size))
-        logger.debug(f"Reduzed to max image Size {image.width}x{image.height}")
+        # logger.debug(f"Reduzed to max image Size {image.width}x{image.height}")
         new_width = image.width - (image.width % 8)
         new_height = image.height - (image.height % 8)
-        logger.debug(f"Expected Crop Result {new_width}x{new_height}")
+        # logger.debug(f"Expected Crop Result {new_width}x{new_height}")
         image = image.crop((0, 0, new_width, new_height))
-        logger.debug(f"Cropped fo /8 image Size {image.width}x{image.height}")
+        # logger.debug(f"Cropped fo /8 image Size {image.width}x{image.height}")
         return image
