@@ -16,7 +16,7 @@ def get_all_local_models(model_folder: str, extension: str = ".safetensors"):
     try:
         for root, _, files in os.walk(model_folder, followlinks=True):
             for file in files:
-                if file.endswith(extension):
+                if file.endswith(extension) and ("inpaint" in file.lower() or "inpaint" in root.lower()):
                     relative_path = "./" + os.path.relpath(os.path.join(root, file))
                     safetensors_files.append(relative_path)
         logger.debug("Found safetensors files: %s", safetensors_files)
