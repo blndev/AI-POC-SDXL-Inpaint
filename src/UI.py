@@ -309,8 +309,7 @@ def create_gradio_interface():
     ) as app:
         with gr.Row():
             gr.Markdown("### " + config.get_app_title() + "\n\n" + config.get_user_message())
-            gr.Markdown("---")
-            gr.Markdown("**Note: black cloth will currently not work!**")
+            gr.Markdown("\n\n---\n\n**Note: black cloth will currently not work!**")
         if config.DEBUG:
             gr.Markdown("*DEBUG enabled*")
             with gr.Row():
