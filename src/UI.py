@@ -342,6 +342,7 @@ def create_gradio_interface():
                         label="Details",
                         info="Add additional Information like gender (woman, man) or 'age 55' (optional)",
                         show_label=False,
+                        value="female",
                         max_length=150,
                         max_lines=1)
             with gr.Column():
